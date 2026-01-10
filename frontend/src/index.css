@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 220 20% 4%;
+    --foreground: 210 20% 95%;
+
+    --card: 220 18% 8%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 220 18% 10%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 160 84% 39%;
+    --primary-foreground: 220 20% 4%;
+
+    --secondary: 220 15% 15%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 220 15% 12%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 220 15% 18%;
+    --accent-foreground: 210 20% 95%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 160 84% 39%;
+    --success-foreground: 220 20% 4%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 20% 4%;
+
+    --border: 220 15% 18%;
+    --input: 220 15% 15%;
+    --ring: 160 84% 39%;
+
+    --radius: 0.5rem;
+
+    --chart-1: 160 84% 39%;
+    --chart-2: 0 72% 51%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 200 80% 50%;
+    --chart-5: 280 65% 60%;
+
+    --sidebar-background: 220 18% 6%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 220 20% 4%;
+    --sidebar-accent: 220 15% 12%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 220 15% 15%;
+    --sidebar-ring: 160 84% 39%;
+  }
+
+  .dark {
+    --background: 220 20% 4%;
+    --foreground: 210 20% 95%;
+
+    --card: 220 18% 8%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 220 18% 10%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 160 84% 39%;
+    --primary-foreground: 220 20% 4%;
+
+    --secondary: 220 15% 15%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 220 15% 12%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 220 15% 18%;
+    --accent-foreground: 210 20% 95%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 15% 18%;
+    --input: 220 15% 15%;
+    --ring: 160 84% 39%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+}
+
+@layer utilities {
+  .font-mono-data {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .text-buy {
+    @apply text-primary;
+  }
+
+  .text-sell {
+    @apply text-destructive;
+  }
+
+  .glow-buy {
+    box-shadow: 0 0 20px hsl(160 84% 39% / 0.3);
+  }
+
+  .glow-sell {
+    box-shadow: 0 0 20px hsl(0 72% 51% / 0.3);
+  }
+
+  .terminal-grid {
+    background-image: 
+      linear-gradient(to right, hsl(220 15% 15% / 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(220 15% 15% / 0.3) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .trade-row-enter {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .scrollbar-terminal::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-terminal::-webkit-scrollbar-track {
+    background: hsl(220 18% 8%);
+  }
+
+  .scrollbar-terminal::-webkit-scrollbar-thumb {
+    background: hsl(220 15% 25%);
+    border-radius: 3px;
+  }
+
+  .scrollbar-terminal::-webkit-scrollbar-thumb:hover {
+    background: hsl(220 15% 35%);
+  }
+}
