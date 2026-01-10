@@ -8,26 +8,19 @@ import java.math.BigDecimal;
 @Entity
 @Table(name = "orders")
 public class Order {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long userId; // Who placed this order?
-
-    private String ticker; // e.g., "GOOGL", "AMZN"
+    private Long userId;
+    private String ticker;
 
     @Enumerated(EnumType.STRING)
-    private OrderType type; // BUY or SELL
+    private OrderType type; // Now refers to the public Enum file
 
     private BigDecimal price;
-
     private Integer quantity;
-    
-    @Enumerated(EnumType.STRING)
-    private OrderStatus status; // PENDING, FILLED, CANCELLED
-}
 
-// We define these Enums inside the same file for simplicity, or separate if you prefer
-enum OrderType { BUY, SELL }
-enum OrderStatus { PENDING, FILLED, CANCELLED }
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status;
+}

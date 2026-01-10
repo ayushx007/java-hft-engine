@@ -22,11 +22,15 @@ public class TestController {
         return orderService.createDummyUser();
     }
 
-    // New Endpoint to test Kafka
     @PostMapping("/trade")
-    public String placeOrder(@RequestParam String ticker, @RequestParam int quantity) {
-        String orderMessage = "BUY " + quantity + " " + ticker;
+    public String placeOrder(@RequestParam String ticker, 
+                             @RequestParam int quantity,
+                             @RequestParam double price,
+                             @RequestParam String side) { // BUY or SELL
+        
+        // Format: SIDE PRICE QUANTITY TICKER
+        String orderMessage = side + " " + price + " " + quantity + " " + ticker;
         orderProducer.sendOrder(orderMessage);
-        return "Order sent to engine!";
+        return "Order sent!";
     }
 }
