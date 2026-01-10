@@ -10,7 +10,7 @@ public class EngineApplication {
 	public static void main(String[] args) {
 		// FORCE UTC TIMEZONE (Fixes the Postgres Connection Error)
 		TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
-		
+
 		SpringApplication.run(EngineApplication.class, args);
 	}
 
