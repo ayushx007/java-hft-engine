@@ -35,7 +35,8 @@ class WebSocketService {
       heartbeatOutgoing: 4000,
       debug: (str) => {
         if (import.meta.env.DEV) {
-          console.log('[WS Debug]', str);
+          // Uncomment if you need to debug raw STOMP frames
+          // console.log('[WS Debug]', str);
         }
       },
       onConnect: () => {
@@ -64,6 +65,9 @@ class WebSocketService {
     this.client.activate();
   }
 
+  /**
+   * Internal method to actually subscribe to the STOMP topic once connected.
+   */
   private subscribeToTrades(): void {
     if (!this.client?.connected) {
       return;
@@ -96,6 +100,23 @@ class WebSocketService {
 
   private notifyConnectionChange(connected: boolean): void {
     this.connectionCallbacks.forEach((callback) => callback(connected));
+  }
+
+  // --- PUBLIC API ---
+
+  /**
+   * The new method your Portfolio component is calling.
+   * It bridges the generic 'subscribe' call to our specific internal logic.
+   */
+  subscribe(topic: string, callback: (message: any) => void) {
+    if (topic === '/topic/trades') {
+       // Bridge the generic subscribe call to our specific trade logic
+       // The callback will receive the 'TradeUpdate' object
+       this.onTrade((trade) => callback(trade));
+    } else {
+       console.warn(`[WebSocket] Auto-subscription for topic '${topic}' not manually mapped in this service.`);
+       // If you need to support other topics later, you can add generic subscription logic here.
+    }
   }
 
   onTrade(callback: TradeCallback): () => void {

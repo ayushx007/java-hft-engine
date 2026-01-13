@@ -1,62 +1,61 @@
 package com.trading.engine.controller;
 
+import com.trading.engine.model.Holding;
 import com.trading.engine.model.User;
+import com.trading.engine.repository.HoldingRepository;
 import com.trading.engine.repository.UserRepository;
+import com.trading.engine.service.RedisService; // <--- Import RedisService
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/portfolio")
-@CrossOrigin(origins = "*") // Allows React (localhost:8081)
+@CrossOrigin(origins = "*")
 public class PortfolioController {
 
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private HoldingRepository holdingRepository;
+
+    @Autowired
+    private RedisService redisService; // <--- Inject Redis Service
+
     @GetMapping("/{userId}")
-    public PortfolioResponse getPortfolio(@PathVariable Long userId) {
+    public Map<String, Object> getPortfolio(@PathVariable Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Create response object
-        PortfolioResponse response = new PortfolioResponse();
-        response.setId(user.getId());
-        response.setUsername(user.getUsername()); // <--- FIX: Setting the Username
-        response.setBalance(user.getBalance());
-        
-        // Mock Holdings (Preserved so frontend table doesn't crash)
-        List<Map<String, Object>> holdings = new ArrayList<>();
-        holdings.add(Map.of("ticker", "GOOGL", "quantity", 10, "avgPrice", 150.00, "currentPrice", 155.00));
-        holdings.add(Map.of("ticker", "MSFT", "quantity", 5, "avgPrice", 200.00, "currentPrice", 202.00));
-        
-        response.setHoldings(holdings);
-        
-        return response;
-    }
+        List<Holding> dbHoldings = holdingRepository.findByUserId(userId);
 
-    // Inner class defining the JSON structure
-    static class PortfolioResponse {
-        private Long id;
-        private String username; // <--- New Field
-        private BigDecimal balance;
-        private List<Map<String, Object>> holdings;
+        List<Map<String, Object>> formattedHoldings = dbHoldings.stream().map(h -> {
+            // 1. Try to get real-time price from Redis
+            BigDecimal currentPrice = redisService.getPrice(h.getTicker());
+            
+            // 2. If Redis is empty (no trades yet), fallback to avg price
+            if (currentPrice == null) {
+                currentPrice = h.getAveragePrice();
+            }
 
-        // Getters and Setters
-        public Long getId() { return id; }
-        public void setId(Long id) { this.id = id; }
-        
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        
-        public BigDecimal getBalance() { return balance; }
-        public void setBalance(BigDecimal balance) { this.balance = balance; }
-        
-        public List<Map<String, Object>> getHoldings() { return holdings; }
-        public void setHoldings(List<Map<String, Object>> holdings) { this.holdings = holdings; }
+            return Map.<String, Object>of(
+                "ticker", h.getTicker(),
+                "quantity", h.getQuantity(),
+                "avgPrice", h.getAveragePrice(),
+                "currentPrice", currentPrice // <--- Now using REAL Redis data!
+            );
+        }).collect(Collectors.toList());
+
+        return Map.of(
+            "id", user.getId(),
+            "username", user.getUsername(),
+            "balance", user.getBalance(),
+            "holdings", formattedHoldings
+        );
     }
 }

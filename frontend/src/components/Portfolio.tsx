@@ -8,9 +8,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Wallet, TrendingUp, RefreshCw } from 'lucide-react';
+import { Wallet, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import apiClient from '@/api/axiosConfig'; // Use your configured axios
+import apiClient from '@/api/axiosConfig';
+import { websocketService } from '@/api/websocketService'; 
 
 interface Holding {
   ticker: string;
@@ -31,54 +32,58 @@ const Portfolio: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPortfolio = async () => {
-    setIsLoading(true);
+  // Modified to support "Silent Refresh" (no spinner)
+  const loadPortfolio = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     setError(null);
+    
     try {
-      // Fetch User ID 1 (Hardcoded for MVP)
+      // Hardcoded to User 1 for MVP
       const response = await apiClient.get<PortfolioData>('/api/portfolio/1');
-      
-      // Transform backend response if needed (Backend User object might lack 'holdings' initially)
-      // For now, we assume the backend sends basic user data.
-      // We will mock 'holdings' on the frontend until Phase 8 (Backend Holdings Table)
-      const data = {
-          ...response.data,
-          holdings: [] // Backend doesn't support holdings yet, so empty list
-      };
-      
-      setPortfolio(data);
+      console.log("✅ Portfolio Updated:", response.data);
+      setPortfolio(response.data);
     } catch (err) {
-      setError('Failed to load portfolio');
       console.error('Portfolio fetch error:', err);
+      if (!silent) setError('Failed to load portfolio');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadPortfolio();
-    
-    // Optional: Refresh balance every 5 seconds to see updates after trades
-    const interval = setInterval(loadPortfolio, 5000);
-    return () => clearInterval(interval);
+    // 1. Initial Load (Show Spinner)
+    loadPortfolio(false);
+
+    // 2. Connect to WebSocket
+    const setupWebSocket = async () => {
+      try {
+        await websocketService.connect();
+        
+        // 3. Subscribe to Trade Updates
+        // The service returns a cleanup function (unsubscribe)
+        const unsubscribe = websocketService.subscribe('/topic/trades', (tradeEvent) => {
+          console.log("🔥 [Portfolio] WebSocket Event Received:", tradeEvent);
+          
+          // 4. Trigger Silent Refresh
+          loadPortfolio(true);
+        });
+
+        // Store cleanup for unmount
+        return unsubscribe;
+      } catch (e) {
+        console.error("WebSocket connection failed in Portfolio:", e);
+      }
+    };
+
+    const cleanupPromise = setupWebSocket();
+
+    // 5. Cleanup on Unmount
+    return () => {
+      cleanupPromise.then(unsubscribe => {
+        if (unsubscribe) unsubscribe();
+      });
+    };
   }, []);
-
-  // Calculate total portfolio value
-  const totalValue = portfolio
-    ? portfolio.balance +
-      (portfolio.holdings?.reduce(
-        (sum, h) => sum + h.quantity * h.currentPrice,
-        0
-      ) || 0)
-    : 0;
-
-  // Calculate total P&L
-  const totalPnL = portfolio
-    ? (portfolio.holdings?.reduce(
-        (sum, h) => sum + h.quantity * (h.currentPrice - h.avgPrice),
-        0
-      ) || 0)
-    : 0;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -88,25 +93,13 @@ const Portfolio: React.FC = () => {
     }).format(value);
   };
 
-  const getPnLColor = (pnl: number) => {
-    if (pnl > 0) return 'text-success';
-    if (pnl < 0) return 'text-destructive';
-    return 'text-muted-foreground';
-  };
-
   if (error) {
     return (
       <Card className="h-full bg-card border-border">
         <CardContent className="h-full flex flex-col items-center justify-center gap-4">
           <p className="text-destructive font-mono">{error}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadPortfolio}
-            className="font-mono"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
+          <Button variant="outline" size="sm" onClick={() => loadPortfolio(false)}>
+            <RefreshCw className="h-4 w-4 mr-2" /> Retry
           </Button>
         </CardContent>
       </Card>
@@ -124,13 +117,11 @@ const Portfolio: React.FC = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={loadPortfolio}
+            onClick={() => loadPortfolio(false)}
             disabled={isLoading}
             className="h-8 w-8"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </CardHeader>
@@ -142,11 +133,11 @@ const Portfolio: React.FC = () => {
             Cash Balance
           </p>
           <p className="text-2xl font-bold font-mono text-success">
-            {isLoading ? '---' : formatCurrency(portfolio?.balance || 0)}
+            {portfolio ? formatCurrency(portfolio.balance) : '---'}
           </p>
         </div>
 
-        {/* Holdings Table (Placeholder until Phase 8) */}
+        {/* Holdings Table */}
         <div className="flex-1 overflow-hidden">
           <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-2">
             Holdings
@@ -157,14 +148,25 @@ const Portfolio: React.FC = () => {
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="font-mono text-xs text-muted-foreground">Ticker</TableHead>
                   <TableHead className="font-mono text-xs text-muted-foreground text-right">Qty</TableHead>
+                  <TableHead className="font-mono text-xs text-muted-foreground text-right">Avg Price</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                 <TableRow>
-                    <TableCell colSpan={2} className="text-center text-muted-foreground font-mono py-8">
-                      No holdings (Coming Soon)
+                {portfolio?.holdings && portfolio.holdings.length > 0 ? (
+                  portfolio.holdings.map((h) => (
+                    <TableRow key={h.ticker} className="border-border hover:bg-muted/50">
+                      <TableCell className="font-mono font-medium">{h.ticker}</TableCell>
+                      <TableCell className="font-mono text-right">{h.quantity}</TableCell>
+                      <TableCell className="font-mono text-right">{formatCurrency(h.avgPrice)}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground font-mono py-8">
+                      {isLoading ? "Loading..." : "No holdings"}
                     </TableCell>
-                 </TableRow>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>

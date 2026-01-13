@@ -1,6 +1,6 @@
-//this service will take an order and push it into a kafka pipeline
 package com.trading.engine.kafka;
 
+import com.trading.engine.model.Order;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -9,11 +9,12 @@ import org.springframework.stereotype.Service;
 public class OrderProducer {
 
     @Autowired
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
-    public void sendOrder(String message) {
-        // Logic: Send message to "stock-orders" topic
-        System.out.println("➡️ Sending Order to Kafka: " + message);
-        kafkaTemplate.send("stock-orders", message);
+    private static final String TOPIC = "stock-orders";
+
+    public void sendMessage(Order order) {
+        System.out.println(String.format("Producing order: %s %s @ %s", order.getType(), order.getTicker(), order.getPrice()));
+        kafkaTemplate.send(TOPIC, order);
     }
 }

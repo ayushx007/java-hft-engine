@@ -45,11 +45,13 @@ const OrderForm: React.FC = () => {
       return;
     }
 
+    // --- CRITICAL FIX: Added userId: 1 ---
     const order: TradeOrder = {
       ticker: ticker.toUpperCase(),
       price: priceNum,
       quantity: quantityNum,
       type,
+      userId: 1 // Hardcoded user for MVP
     };
 
     setIsSubmitting(true);
@@ -70,6 +72,7 @@ const OrderForm: React.FC = () => {
       
       console.log('Trade response:', response);
     } catch (error: any) {
+      console.error("Trade failed:", error); // Added logging for debugging
       toast({
         title: 'Order Failed',
         description: error.response?.data?.message || 'Failed to execute order. Please try again.',

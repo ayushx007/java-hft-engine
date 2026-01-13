@@ -17,8 +17,12 @@ public class Trade {
     private String ticker;
     private BigDecimal price;
     private Integer quantity;
+
+    // Detailed tracking for Settlement
+    private Long buyerId;
+    private Long sellerId;
     
-    // Who was involved?
+    // Optional: Keep order IDs if you want to track origin
     private Long buyerOrderId;
     private Long sellerOrderId;
 

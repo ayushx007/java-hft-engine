@@ -43,6 +43,7 @@ export interface TradeOrder {
   price: number;
   quantity: number;
   type: 'BUY' | 'SELL';
+  userId: number; // <--- ADD THIS LINE
 }
 
 export interface TradeResponse {

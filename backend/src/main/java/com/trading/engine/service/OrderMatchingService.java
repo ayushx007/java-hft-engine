@@ -1,17 +1,22 @@
 package com.trading.engine.service;
 
+import com.trading.engine.model.Holding;
 import com.trading.engine.model.Order;
 import com.trading.engine.model.Trade;
+import com.trading.engine.model.User;
+import com.trading.engine.repository.HoldingRepository;
 import com.trading.engine.repository.OrderRepository;
 import com.trading.engine.repository.TradeRepository;
+import com.trading.engine.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class OrderMatchingService {
@@ -21,70 +26,122 @@ public class OrderMatchingService {
 
     @Autowired
     private TradeRepository tradeRepository;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Autowired
+    private HoldingRepository holdingRepository;
 
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
-    private final List<Order> buyOrders = new ArrayList<>();
-    private final List<Order> sellOrders = new ArrayList<>();
+    @Autowired
+    private RedisService redisService; // <--- NEW: Redis Injection
 
-    @Transactional // Ensures Database integrity (All or Nothing)
+    @Transactional
     public void processOrder(Order newOrder) {
-        // Save the incoming order first (so it has an ID)
+        // 1. Save the new order to DB
         orderRepository.save(newOrder);
 
-        if (newOrder.getType().toString().equals("BUY")) {
-            matchBuyOrder(newOrder);
+        // 2. Find matching orders (Simple Price Priority)
+        // BUY looks for cheap SELLS. SELL looks for expensive BUYS.
+        List<Order> matchingOrders;
+        if (newOrder.getType() == Order.Type.BUY) {
+            matchingOrders = orderRepository.findByTickerAndTypeAndPriceLessThanEqualOrderByPriceAsc(
+                    newOrder.getTicker(), Order.Type.SELL, newOrder.getPrice());
         } else {
-            matchSellOrder(newOrder);
+            matchingOrders = orderRepository.findByTickerAndTypeAndPriceGreaterThanEqualOrderByPriceDesc(
+                    newOrder.getTicker(), Order.Type.BUY, newOrder.getPrice());
         }
+
+        // 3. Match Logic
+        for (Order match : matchingOrders) {
+            if (newOrder.getQuantity() <= 0) break;
+
+            int quantityToTrade = Math.min(newOrder.getQuantity(), match.getQuantity());
+            BigDecimal tradePrice = match.getPrice(); // Maker's price determines execution price
+
+            // Create and Save Trade
+            Trade trade = new Trade();
+            trade.setTicker(newOrder.getTicker());
+            trade.setPrice(tradePrice);
+            trade.setQuantity(quantityToTrade);
+            trade.setBuyerId(newOrder.getType() == Order.Type.BUY ? newOrder.getUserId() : match.getUserId());
+            trade.setSellerId(newOrder.getType() == Order.Type.SELL ? newOrder.getUserId() : match.getUserId());
+            trade.setTimestamp(LocalDateTime.now());
+            tradeRepository.save(trade);
+
+            // 4. Update Balances and Holdings (SETTLEMENT)
+            settleTrade(trade);
+
+            // 5. Update Order Quantities
+            newOrder.setQuantity(newOrder.getQuantity() - quantityToTrade);
+            match.setQuantity(match.getQuantity() - quantityToTrade);
+            orderRepository.save(match);
+            
+            // 6. Broadcast to Frontend
+            messagingTemplate.convertAndSend("/topic/trades", trade);
+        }
+
+        // Save remaining quantity of new order
+        orderRepository.save(newOrder);
     }
 
-    private void matchBuyOrder(Order buyOrder) {
-        // Simple logic: Find first matching Sell Order
-        // In real life, you'd iterate through list to fill quantity fully
-        for (Order sellOrder : sellOrders) {
-            if (sellOrder.getTicker().equals(buyOrder.getTicker()) &&
-                sellOrder.getPrice().compareTo(buyOrder.getPrice()) <= 0) {
-                
-                executeTrade(buyOrder, sellOrder);
-                return; // Assume full fill for simplicity
-            }
-        }
-        buyOrders.add(buyOrder);
-    }
-
-    private void matchSellOrder(Order sellOrder) {
-        for (Order buyOrder : buyOrders) {
-            if (buyOrder.getTicker().equals(sellOrder.getTicker()) &&
-                buyOrder.getPrice().compareTo(sellOrder.getPrice()) >= 0) {
-                
-                executeTrade(buyOrder, sellOrder);
-                return;
-            }
-        }
-        sellOrders.add(sellOrder);
-    }
-
-    private void executeTrade(Order buyOrder, Order sellOrder) {
-        System.out.println("🔥 EXECUTING TRADE: " + buyOrder.getTicker() + " @ $" + sellOrder.getPrice());
-
-        // Create Trade Record
-        Trade trade = new Trade();
-        trade.setTicker(buyOrder.getTicker());
-        trade.setPrice(sellOrder.getPrice()); // Trade happens at Maker price
-        trade.setQuantity(Math.min(buyOrder.getQuantity(), sellOrder.getQuantity()));
-        trade.setBuyerOrderId(buyOrder.getId());
-        trade.setSellerOrderId(sellOrder.getId());
-        trade.setTimestamp(LocalDateTime.now());
-
-        tradeRepository.save(trade);
-
-        // Pushes the trade object to anyone listening on "/topic/trades"
-        messagingTemplate.convertAndSend("/topic/trades", trade);
+    /**
+     * Handles the movement of Cash and Stock between Buyer and Seller.
+     */
+    private void settleTrade(Trade trade) {
+        // --- 1. Update BUYER (Lose Cash, Gain Stock) ---
+        User buyer = userRepository.findById(trade.getBuyerId()).orElseThrow();
+        BigDecimal cost = trade.getPrice().multiply(BigDecimal.valueOf(trade.getQuantity()));
         
-        // Remove filled orders from memory (Basic Cleanup)
-        buyOrders.remove(buyOrder);
-        sellOrders.remove(sellOrder);
+        buyer.setBalance(buyer.getBalance().subtract(cost));
+        userRepository.save(buyer);
+        
+        updateHolding(trade.getBuyerId(), trade.getTicker(), trade.getQuantity(), trade.getPrice());
+
+        // --- 2. Update SELLER (Gain Cash, Lose Stock) ---
+        User seller = userRepository.findById(trade.getSellerId()).orElseThrow();
+        
+        seller.setBalance(seller.getBalance().add(cost));
+        userRepository.save(seller);
+        
+        // Negative quantity for seller (reducing holdings)
+        updateHolding(trade.getSellerId(), trade.getTicker(), -trade.getQuantity(), trade.getPrice());
+
+        // --- 3. NEW: SAVE PRICE TO REDIS ---
+        // This makes the price instantly available to the frontend without querying the DB
+        redisService.savePrice(trade.getTicker(), trade.getPrice());
+    }
+
+    private void updateHolding(Long userId, String ticker, int quantityChange, BigDecimal tradePrice) {
+        Optional<Holding> existingHolding = holdingRepository.findByUserIdAndTicker(userId, ticker);
+
+        if (existingHolding.isPresent()) {
+            Holding h = existingHolding.get();
+            // Calculate new Weighted Average Price only if buying (positive quantity)
+            if (quantityChange > 0) {
+                BigDecimal totalValue = h.getAveragePrice().multiply(BigDecimal.valueOf(h.getQuantity()));
+                BigDecimal newValue = tradePrice.multiply(BigDecimal.valueOf(quantityChange));
+                BigDecimal newTotalValue = totalValue.add(newValue);
+                int newTotalQty = h.getQuantity() + quantityChange;
+                
+                // Avoid division by zero
+                if (newTotalQty != 0) {
+                     h.setAveragePrice(newTotalValue.divide(BigDecimal.valueOf(newTotalQty), java.math.MathContext.DECIMAL32));
+                }
+            }
+            h.setQuantity(h.getQuantity() + quantityChange);
+            holdingRepository.save(h);
+        } else if (quantityChange > 0) {
+            // New Holding
+            Holding h = new Holding();
+            h.setUserId(userId);
+            h.setTicker(ticker);
+            h.setQuantity(quantityChange);
+            h.setAveragePrice(tradePrice);
+            holdingRepository.save(h);
+        }
     }
 }
