@@ -62,6 +62,9 @@ export const tradeApi = {
     const response = await apiClient.post<TradeResponse>('/trade', order);
     return response.data;
   },
+  getPendingOrders: (userId: number) => apiClient.get<any[]>(`/api/orders/pending/${userId}`),
+  getHistory: (userId: number) => apiClient.get<any[]>(`/api/orders/history/${userId}`),
+  cancelOrder: (orderId: number) => apiClient.delete(`/api/orders/${orderId}`),
 };
 
 export default apiClient;

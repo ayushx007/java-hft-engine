@@ -20,4 +20,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         Order.Type type, 
         BigDecimal price
     );
+
+
+    // --- NEW METHOD: FILTER COMPLETED ORDERS ---
+    // Only return orders that still have stocks left to trade (Quantity > 0)
+    List<Order> findByUserIdAndQuantityGreaterThan(Long userId, int quantity);
 }

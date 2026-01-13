@@ -7,6 +7,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import PrivateRoute from "@/routes/PrivateRoute";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
+import OrderHistoryPage from "@/pages/OrderHistoryPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,14 @@ const App = () => (
               element={
                 <PrivateRoute>
                   <DashboardPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/order-history"
+              element={
+                <PrivateRoute>
+                  <OrderHistoryPage />
                 </PrivateRoute>
               }
             />

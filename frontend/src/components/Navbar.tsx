@@ -1,7 +1,8 @@
 import React from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Activity, LogOut, User, Wifi, WifiOff } from 'lucide-react';
+import { NavLink } from '@/components/NavLink';
+import { Activity, LogOut, User, Wifi, WifiOff, LayoutDashboard, History } from 'lucide-react';
 
 interface NavbarProps {
   isConnected: boolean;
@@ -23,8 +24,17 @@ const Navbar: React.FC<NavbarProps> = ({ isConnected }) => {
         </div>
       </div>
 
-      {/* Center - Connection Status */}
-      <div className="flex items-center gap-2">
+      {/* Center - Navigation & Connection Status */}
+      <div className="flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-1">
+          <NavLink to="/dashboard" icon={<LayoutDashboard className="w-4 h-4" />}>
+            Dashboard
+          </NavLink>
+          <NavLink to="/order-history" icon={<History className="w-4 h-4" />}>
+            Order History
+          </NavLink>
+        </nav>
+
         <div
           className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono ${
             isConnected
