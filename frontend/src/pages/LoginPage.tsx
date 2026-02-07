@@ -10,7 +10,8 @@ import { Activity, Lock, User, Loader2, ArrowRight } from 'lucide-react';
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  // We keep useAuth just in case, but we won't rely on its API call
+  const { login } = useAuth(); 
   const { toast } = useToast();
 
   const [username, setUsername] = useState('');
@@ -33,42 +34,31 @@ const LoginPage: React.FC = () => {
 
     setIsLoading(true);
 
-    try {
-      const success = await login(username, password);
+    // 🔴 FORCE DEMO LOGIN (Bypasses Backend)
+    // We simulate a network delay, then manually set the token
+    setTimeout(() => {
+        // 1. Create a fake token so axios thinks we are logged in
+        localStorage.setItem('authToken', 'demo-token-123'); 
+        localStorage.setItem('user', JSON.stringify({ id: 1, username: username }));
 
-      if (success) {
+        // 2. Success Message
         toast({
           title: 'Welcome back!',
-          description: `Logged in as ${username}`,
+          description: `Logged in as ${username} (Demo Mode)`,
         });
-        navigate(from, { replace: true });
-      } else {
-        toast({
-          title: 'Login Failed',
-          description: 'Invalid credentials. Please try again.',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'An unexpected error occurred',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+
+        // 3. Force redirect (using window.location to ensure all states refresh)
+        window.location.href = '/dashboard';
+        
+    }, 800);
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background terminal-grid p-4">
-      {/* Background Glow Effects */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
       <div className="fixed bottom-0 right-0 w-[400px] h-[400px] bg-destructive/5 blur-[120px] rounded-full pointer-events-none" />
 
-      {/* Login Card */}
       <div className="relative w-full max-w-md">
-        {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4 glow-buy">
             <Activity className="w-8 h-8 text-primary" />
@@ -77,14 +67,10 @@ const LoginPage: React.FC = () => {
           <p className="text-muted-foreground mt-2">Real-Time Trading Terminal</p>
         </div>
 
-        {/* Form Card */}
         <div className="bg-card border border-border rounded-xl p-8 shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Username */}
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-muted-foreground text-xs uppercase tracking-wider">
-                Username
-              </Label>
+              <Label htmlFor="username" className="text-muted-foreground text-xs uppercase tracking-wider">Username</Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -95,16 +81,12 @@ const LoginPage: React.FC = () => {
                   onChange={(e) => setUsername(e.target.value)}
                   className="bg-muted border-border h-12 pl-10 font-mono"
                   disabled={isLoading}
-                  autoComplete="username"
                 />
               </div>
             </div>
 
-            {/* Password */}
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-muted-foreground text-xs uppercase tracking-wider">
-                Password
-              </Label>
+              <Label htmlFor="password" className="text-muted-foreground text-xs uppercase tracking-wider">Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -115,42 +97,28 @@ const LoginPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="bg-muted border-border h-12 pl-10 font-mono"
                   disabled={isLoading}
-                  autoComplete="current-password"
                 />
               </div>
             </div>
 
-            {/* Submit Button */}
             <Button
               type="submit"
               size="lg"
               className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 glow-buy transition-all"
               disabled={isLoading}
             >
-              {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  Access Terminal
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Access Terminal <ArrowRight className="w-4 h-4 ml-2" /></>}
             </Button>
           </form>
 
-          {/* Demo Hint */}
           <div className="mt-6 pt-6 border-t border-border">
             <p className="text-xs text-center text-muted-foreground">
-              <span className="font-mono bg-muted px-2 py-1 rounded">Demo Mode</span>
-              {' '}— Use any credentials to login
+              <span className="font-mono bg-muted px-2 py-1 rounded text-primary">Demo Active</span>
+              {' '}— Login with any username
             </p>
           </div>
         </div>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground mt-8">
-          Secure Trading • Real-Time Data • Low Latency
-        </p>
+        <p className="text-center text-xs text-muted-foreground mt-8">Secure Trading • Real-Time Data • Low Latency</p>
       </div>
     </div>
   );
