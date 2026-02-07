@@ -1,5 +1,6 @@
 package com.trading.engine.service;
 
+import com.trading.engine.dto.TradeEvent; // <--- IMPORTS FIXED
 import com.trading.engine.model.Holding;
 import com.trading.engine.model.Order;
 import com.trading.engine.model.Trade;
@@ -37,7 +38,7 @@ public class OrderMatchingService {
     private SimpMessagingTemplate messagingTemplate;
 
     @Autowired
-    private RedisService redisService; // <--- NEW: Redis Injection
+    private RedisService redisService; 
 
     @Transactional
     public void processOrder(Order newOrder) {
@@ -62,26 +63,42 @@ public class OrderMatchingService {
             int quantityToTrade = Math.min(newOrder.getQuantity(), match.getQuantity());
             BigDecimal tradePrice = match.getPrice(); // Maker's price determines execution price
 
-            // Create and Save Trade
-            Trade trade = new Trade();
-            trade.setTicker(newOrder.getTicker());
-            trade.setPrice(tradePrice);
-            trade.setQuantity(quantityToTrade);
-            trade.setBuyerId(newOrder.getType() == Order.Type.BUY ? newOrder.getUserId() : match.getUserId());
-            trade.setSellerId(newOrder.getType() == Order.Type.SELL ? newOrder.getUserId() : match.getUserId());
-            trade.setTimestamp(LocalDateTime.now());
-            tradeRepository.save(trade);
+            // --- CRITICAL FIX 1: STOP GHOST TRADES ---
+            // Only proceed if there is actual quantity to trade
+            if (quantityToTrade > 0) {
+                
+                // Create and Save Trade
+                Trade trade = new Trade();
+                trade.setTicker(newOrder.getTicker());
+                trade.setPrice(tradePrice);
+                trade.setQuantity(quantityToTrade);
+                // Determine Buyer/Seller IDs based on who initiated the trade
+                trade.setBuyerId(newOrder.getType() == Order.Type.BUY ? newOrder.getUserId() : match.getUserId());
+                trade.setSellerId(newOrder.getType() == Order.Type.SELL ? newOrder.getUserId() : match.getUserId());
+                trade.setTimestamp(LocalDateTime.now());
+                tradeRepository.save(trade);
 
-            // 4. Update Balances and Holdings (SETTLEMENT)
-            settleTrade(trade);
+                // 4. Update Balances and Holdings (SETTLEMENT)
+                settleTrade(trade);
 
-            // 5. Update Order Quantities
+                // --- CRITICAL FIX 2: BROADCAST CORRECT FORMAT ---
+                // We send a TradeEvent DTO, not the raw Entity.
+                // This passes the "BUY" or "SELL" string so the frontend knows which color to use.
+                TradeEvent event = new TradeEvent(
+                    trade.getTicker(),
+                    trade.getPrice(),
+                    trade.getQuantity(),
+                    newOrder.getType().toString(), // "BUY" or "SELL"
+                    trade.getTimestamp()
+                );
+                
+                messagingTemplate.convertAndSend("/topic/trades", event);
+            }
+
+            // 5. Update Order Quantities (Outside the 'if' to ensure logic flows correctly)
             newOrder.setQuantity(newOrder.getQuantity() - quantityToTrade);
             match.setQuantity(match.getQuantity() - quantityToTrade);
             orderRepository.save(match);
-            
-            // 6. Broadcast to Frontend
-            messagingTemplate.convertAndSend("/topic/trades", trade);
         }
 
         // Save remaining quantity of new order
@@ -110,8 +127,7 @@ public class OrderMatchingService {
         // Negative quantity for seller (reducing holdings)
         updateHolding(trade.getSellerId(), trade.getTicker(), -trade.getQuantity(), trade.getPrice());
 
-        // --- 3. NEW: SAVE PRICE TO REDIS ---
-        // This makes the price instantly available to the frontend without querying the DB
+        // --- 3. Save Price to Redis ---
         redisService.savePrice(trade.getTicker(), trade.getPrice());
     }
 

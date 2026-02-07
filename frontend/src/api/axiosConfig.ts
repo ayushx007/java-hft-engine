@@ -2,7 +2,8 @@ import axios from 'axios';
 
 // Create a configured Axios instance
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
+  // UPDATED: Default to empty string for relative pathing (uses Proxy)
+  baseURL: import.meta.env.VITE_API_BASE_URL || '', 
   headers: {
     'Content-Type': 'application/json',
   },
@@ -43,7 +44,7 @@ export interface TradeOrder {
   price: number;
   quantity: number;
   type: 'BUY' | 'SELL';
-  userId: number; // <--- ADD THIS LINE
+  userId: number;
 }
 
 export interface TradeResponse {
@@ -59,12 +60,13 @@ export interface TradeResponse {
 // Trade API functions
 export const tradeApi = {
   placeTrade: async (order: TradeOrder): Promise<TradeResponse> => {
-    const response = await apiClient.post<TradeResponse>('/trade', order);
+    const response = await apiClient.post<TradeResponse>('/api/trade', order);
     return response.data;
   },
   getPendingOrders: (userId: number) => apiClient.get<any[]>(`/api/orders/pending/${userId}`),
   getHistory: (userId: number) => apiClient.get<any[]>(`/api/orders/history/${userId}`),
   cancelOrder: (orderId: number) => apiClient.delete(`/api/orders/${orderId}`),
+  getRecentTrades: () => apiClient.get<any[]>('/api/trades/recent'),
 };
 
 export default apiClient;

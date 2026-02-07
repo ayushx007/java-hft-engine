@@ -26,7 +26,8 @@ class WebSocketService {
       return;
     }
 
-    const wsUrl = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
+   const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const wsUrl = `${protocol}//${window.location.host}/ws-message`;
 
     this.client = new Client({
       webSocketFactory: () => new SockJS(wsUrl),
@@ -110,12 +111,12 @@ class WebSocketService {
    */
   subscribe(topic: string, callback: (message: any) => void) {
     if (topic === '/topic/trades') {
-       // Bridge the generic subscribe call to our specific trade logic
-       // The callback will receive the 'TradeUpdate' object
-       this.onTrade((trade) => callback(trade));
+      // Bridge the generic subscribe call to our specific trade logic
+      // The callback will receive the 'TradeUpdate' object
+      this.onTrade((trade) => callback(trade));
     } else {
-       console.warn(`[WebSocket] Auto-subscription for topic '${topic}' not manually mapped in this service.`);
-       // If you need to support other topics later, you can add generic subscription logic here.
+      console.warn(`[WebSocket] Auto-subscription for topic '${topic}' not manually mapped in this service.`);
+      // If you need to support other topics later, you can add generic subscription logic here.
     }
   }
 

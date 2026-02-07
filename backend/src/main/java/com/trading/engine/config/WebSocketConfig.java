@@ -22,6 +22,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // The endpoint the frontend connects to.
         // setAllowedOriginPatterns("*") fixes CORS issues for local development
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
+        registry.addEndpoint("/ws-message").setAllowedOriginPatterns("*").withSockJS();
     }
 }

@@ -6,5 +6,6 @@ import java.util.List; // <--- THIS WAS MISSING
 
 public interface TradeRepository extends JpaRepository<Trade, Long> {
     // Finds all trades where the user was EITHER the buyer OR the seller
-    List<Trade> findByBuyerIdOrSellerId(Long buyerId, Long sellerId);
+    List<Trade> findByBuyerIdOrSellerIdAndQuantityGreaterThan(Long buyerId, Long sellerId, int quantity);//quantity>0 to avoid zero-quantity trades
+    List<Trade> findTop5ByQuantityGreaterThanOrderByTimestampDesc(int quantity);
 }
