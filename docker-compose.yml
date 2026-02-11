@@ -49,6 +49,7 @@ services:
       - "6379:6379"
 
   backend:
+    image: ayushx07/trading-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -72,6 +73,7 @@ services:
       SPRING_DATA_REDIS_PORT: 6379  # <--- Changed from SPRING_REDIS_PORT
 
   frontend:
+    image: ayushx07/trading-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
