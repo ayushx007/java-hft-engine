@@ -44,21 +44,23 @@ jobs:
           username: ubuntu
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
-            # Navigate to project
             cd ~/java-hft-engine
             
-            # Pull latest docker-compose (if changed)
-            git pull
+            # 1. Force the server to match GitHub (Fixes the Git Conflict)
+            # This deletes local manual edits to docker-compose.yml on the server
+            git fetch --all
+            git reset --hard origin/main
             
-            # Login to Docker Hub
+            # 2. Login to Docker Hub
             echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
             
-            # Pull only the new app images (keeps DB/Kafka running)
-            docker compose pull backend frontend
+            # 3. Use hyphenated docker-compose for older Docker versions on the VM
+            # We pull both to ensure the latest frontend with SSL config is used
+            sudo docker-compose pull backend frontend
             
-            # Restart only the apps to save CPU cycles
-            # This prevents the 1-core CPU from freezing during a full restart
-            docker compose up -d --no-deps backend frontend
+            # 4. Restart only the apps to save CPU cycles
+            # The --force-recreate ensures the new SSL port mappings are applied
+            sudo docker-compose up -d --no-deps --force-recreate backend frontend
             
-            # Clean up old images to save disk space (Important for 50GB limit)
-            docker image prune -f
+            # 5. Clean up old images to save disk space
+            sudo docker image prune -f
