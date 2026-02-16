@@ -35,7 +35,6 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    # --- ADDED HEALTHCHECK (Prevents race condition crashes) ---
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
@@ -50,15 +49,12 @@ services:
 
   backend:
     image: ayushx07/trading-backend:latest
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     container_name: trading-backend
     depends_on:
       postgres:
         condition: service_started
       kafka:
-        condition: service_healthy # <--- WAITS FOR KAFKA TO BE READY
+        condition: service_healthy
       redis:
         condition: service_started
     ports:
@@ -68,20 +64,20 @@ services:
       SPRING_DATASOURCE_USERNAME: user
       SPRING_DATASOURCE_PASSWORD: password
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      # --- FIXED REDIS VARIABLES ---
-      SPRING_DATA_REDIS_HOST: redis # <--- Changed from SPRING_REDIS_HOST
-      SPRING_DATA_REDIS_PORT: 6379  # <--- Changed from SPRING_REDIS_PORT
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
 
   frontend:
     image: ayushx07/trading-frontend:latest
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
     container_name: trading-frontend
     depends_on:
       - backend
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+        - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   postgres_data:
