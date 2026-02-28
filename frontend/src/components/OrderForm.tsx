@@ -2,12 +2,27 @@ import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { tradeApi, TradeOrder } from '@/api/axiosConfig';
 import { useToast } from '@/hooks/use-toast';
 import { TrendingUp, TrendingDown, Loader2, DollarSign, Hash, BarChart3, Zap } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 type OrderKind = 'LIMIT' | 'MARKET';
+
+// Available tickers for trading
+const AVAILABLE_TICKERS = [
+  { symbol: 'AAPL', name: 'Apple Inc.' },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.' },
+  { symbol: 'MSFT', name: 'Microsoft Corp.' },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.' },
+  { symbol: 'TSLA', name: 'Tesla Inc.' },
+  { symbol: 'META', name: 'Meta Platforms Inc.' },
+  { symbol: 'NVDA', name: 'NVIDIA Corp.' },
+  { symbol: 'JPM', name: 'JPMorgan Chase' },
+  { symbol: 'V', name: 'Visa Inc.' },
+  { symbol: 'JNJ', name: 'Johnson & Johnson' },
+];
 
 const OrderForm: React.FC = () => {
   const { toast } = useToast();
@@ -145,19 +160,34 @@ const OrderForm: React.FC = () => {
           </p>
         </div>
 
-        {/* Ticker Input */}
+        {/* Ticker Select */}
         <div className="space-y-2">
           <Label htmlFor="ticker" className="text-muted-foreground text-xs uppercase tracking-wider">
             Ticker Symbol
           </Label>
-          <Input
-            id="ticker"
-            placeholder="AAPL, GOOGL, TSLA..."
+          <Select
             value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            className="bg-muted border-border font-mono text-lg h-12 uppercase"
+            onValueChange={setTicker}
             disabled={isSubmitting}
-          />
+          >
+            <SelectTrigger className="bg-muted border-border font-mono text-lg h-12">
+              <SelectValue placeholder="Select a ticker..." />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {AVAILABLE_TICKERS.map((t) => (
+                <SelectItem 
+                  key={t.symbol} 
+                  value={t.symbol}
+                  className="cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono font-semibold">{t.symbol}</span>
+                    <span className="text-muted-foreground text-sm">{t.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Price Input - Hidden for Market Orders */}
