@@ -41,9 +41,10 @@ apiClient.interceptors.response.use(
 // Trade API types
 export interface TradeOrder {
   ticker: string;
-  price: number;
+  price?: number; // Optional for MARKET orders
   quantity: number;
   type: 'BUY' | 'SELL';
+  orderKind: 'LIMIT' | 'MARKET';
   userId: number;
 }
 

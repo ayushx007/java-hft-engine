@@ -3,9 +3,11 @@ import { websocketService, TradeUpdate } from '@/api/websocketService';
 import { tradeApi } from '@/api/axiosConfig'; // <--- Import this
 import Navbar from '@/components/Navbar';
 import OrderForm from '@/components/OrderForm';
+import OrderBook from '@/components/OrderBook';
 import TradeList from '@/components/TradeList';
 import StockChart from '@/components/StockChart';
 import Portfolio from '@/components/Portfolio';
+import Watchlist from '@/components/Watchlist';
 
 const DashboardPage: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -56,9 +58,14 @@ const DashboardPage: React.FC = () => {
         <div className="max-w-[1800px] mx-auto h-full">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 h-[calc(100vh-6rem)]">
             
-            {/* Left: Order Form */}
-            <div className="lg:col-span-3">
-              <OrderForm />
+            {/* Left: Order Form + Order Book */}
+            <div className="lg:col-span-3 flex flex-col gap-4 lg:gap-6">
+              <div className="shrink-0">
+                <OrderForm />
+              </div>
+              <div className="flex-1 min-h-[300px]">
+                <OrderBook />
+              </div>
             </div>
 
             {/* Center: Chart + Feed */}
@@ -71,9 +78,14 @@ const DashboardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Right: Portfolio */}
-            <div className="lg:col-span-3">
-              <Portfolio />
+            {/* Right: Portfolio + Watchlist (mirrors Left column) */}
+            <div className="lg:col-span-3 flex flex-col gap-4 lg:gap-6">
+              <div className="shrink-0">
+                <Portfolio />
+              </div>
+              <div className="flex-1 min-h-[300px]">
+                <Watchlist />
+              </div>
             </div>
 
           </div>

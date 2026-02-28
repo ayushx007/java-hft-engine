@@ -4,14 +4,22 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { tradeApi, TradeOrder } from '@/api/axiosConfig';
 import { useToast } from '@/hooks/use-toast';
-import { TrendingUp, TrendingDown, Loader2, DollarSign, Hash, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Loader2, DollarSign, Hash, BarChart3, Zap } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+
+type OrderKind = 'LIMIT' | 'MARKET';
 
 const OrderForm: React.FC = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
+
   const [ticker, setTicker] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [orderKind, setOrderKind] = useState<OrderKind>('LIMIT');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isMarketOrder = orderKind === 'MARKET';
 
   const handleSubmit = async (type: 'BUY' | 'SELL') => {
     // Validation
@@ -27,7 +35,8 @@ const OrderForm: React.FC = () => {
     const priceNum = parseFloat(price);
     const quantityNum = parseInt(quantity, 10);
 
-    if (isNaN(priceNum) || priceNum <= 0) {
+    // Only validate price for LIMIT orders
+    if (!isMarketOrder && (isNaN(priceNum) || priceNum <= 0)) {
       toast({
         title: 'Validation Error',
         description: 'Please enter a valid price',
@@ -45,13 +54,22 @@ const OrderForm: React.FC = () => {
       return;
     }
 
-    // --- CRITICAL FIX: Added userId: 1 ---
+    if (!user?.id) {
+      toast({
+        title: 'Authentication Error',
+        description: 'You must be logged in to trade.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const order: TradeOrder = {
       ticker: ticker.toUpperCase(),
-      price: priceNum,
+      price: isMarketOrder ? undefined : priceNum,
       quantity: quantityNum,
       type,
-      userId: 1 // Hardcoded user for MVP
+      orderKind,
+      userId: Number(user.id)
     };
 
     setIsSubmitting(true);
@@ -59,9 +77,10 @@ const OrderForm: React.FC = () => {
     try {
       const response = await tradeApi.placeTrade(order);
       
+      const priceDisplay = isMarketOrder ? 'Market Price' : `$${priceNum.toFixed(2)}`;
       toast({
-        title: `${type} Order Executed`,
-        description: `${order.ticker} × ${order.quantity} @ $${order.price.toFixed(2)}`,
+        title: `${orderKind} ${type} Order Sent`,
+        description: `${order.ticker} × ${order.quantity} @ ${priceDisplay}`,
         className: type === 'BUY' ? 'border-primary' : 'border-destructive',
       });
 
@@ -70,9 +89,8 @@ const OrderForm: React.FC = () => {
       setPrice('');
       setQuantity('');
       
-      console.log('Trade response:', response);
     } catch (error: any) {
-      console.error("Trade failed:", error); // Added logging for debugging
+      console.error("Trade failed:", error);
       toast({
         title: 'Order Failed',
         description: error.response?.data?.message || 'Failed to execute order. Please try again.',
@@ -83,7 +101,7 @@ const OrderForm: React.FC = () => {
     }
   };
 
-  const totalValue = (parseFloat(price) || 0) * (parseInt(quantity, 10) || 0);
+  const totalValue = isMarketOrder ? 0 : (parseFloat(price) || 0) * (parseInt(quantity, 10) || 0);
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 h-full">
@@ -93,6 +111,40 @@ const OrderForm: React.FC = () => {
       </div>
 
       <div className="space-y-5">
+        {/* Order Kind Toggle */}
+        <div className="space-y-2">
+          <Label className="text-muted-foreground text-xs uppercase tracking-wider">
+            Order Type
+          </Label>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant={orderKind === 'LIMIT' ? 'default' : 'outline'}
+              onClick={() => setOrderKind('LIMIT')}
+              className={`h-10 ${orderKind === 'LIMIT' ? 'bg-primary' : ''}`}
+              disabled={isSubmitting}
+            >
+              <DollarSign className="w-4 h-4 mr-1" />
+              Limit
+            </Button>
+            <Button
+              type="button"
+              variant={orderKind === 'MARKET' ? 'default' : 'outline'}
+              onClick={() => setOrderKind('MARKET')}
+              className={`h-10 ${orderKind === 'MARKET' ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+              disabled={isSubmitting}
+            >
+              <Zap className="w-4 h-4 mr-1" />
+              Market
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {isMarketOrder 
+              ? 'Executes immediately at best available price' 
+              : 'Executes only at your specified price or better'}
+          </p>
+        </div>
+
         {/* Ticker Input */}
         <div className="space-y-2">
           <Label htmlFor="ticker" className="text-muted-foreground text-xs uppercase tracking-wider">
@@ -108,26 +160,38 @@ const OrderForm: React.FC = () => {
           />
         </div>
 
-        {/* Price Input */}
-        <div className="space-y-2">
-          <Label htmlFor="price" className="text-muted-foreground text-xs uppercase tracking-wider">
-            Price (USD)
-          </Label>
-          <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              id="price"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="bg-muted border-border font-mono text-lg h-12 pl-9"
-              disabled={isSubmitting}
-            />
+        {/* Price Input - Hidden for Market Orders */}
+        {!isMarketOrder && (
+          <div className="space-y-2">
+            <Label htmlFor="price" className="text-muted-foreground text-xs uppercase tracking-wider">
+              Price (USD)
+            </Label>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                id="price"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="bg-muted border-border font-mono text-lg h-12 pl-9"
+                disabled={isSubmitting}
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Market Order Info */}
+        {isMarketOrder && (
+          <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+            <p className="text-sm text-orange-400">
+              <Zap className="w-4 h-4 inline mr-1" />
+              Price determined by best available order in the market
+            </p>
+          </div>
+        )}
 
         {/* Quantity Input */}
         <div className="space-y-2">
@@ -149,8 +213,8 @@ const OrderForm: React.FC = () => {
           </div>
         </div>
 
-        {/* Total Value Display */}
-        {totalValue > 0 && (
+        {/* Total Value Display - Only for Limit Orders */}
+        {!isMarketOrder && totalValue > 0 && (
           <div className="p-4 bg-muted/50 rounded-lg border border-border">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Total Value</p>
             <p className="text-2xl font-mono font-semibold">

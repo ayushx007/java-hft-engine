@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import apiClient from '@/api/axiosConfig';
 
 export interface User {
   id: string;
@@ -20,6 +21,13 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+interface LoginResponse {
+  userId: number;
+  username: string;
+  token: string;
+  message: string;
+}
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,44 +35,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     // Check for existing session on mount
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
+    const token = localStorage.getItem('authToken');
+    
+    if (storedUser && token) {
       try {
         setUser(JSON.parse(storedUser));
       } catch {
         localStorage.removeItem('user');
+        localStorage.removeItem('authToken');
       }
     }
     setIsLoading(false);
   }, []);
 
   const login = async (username: string, password: string): Promise<boolean> => {
-    // Mock authentication - replace with real API call
-    // Simulating network delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      // Call the Real Backend API
+      const response = await apiClient.post<LoginResponse>('/api/auth/login', {
+        username,
+        password
+      });
 
-    // Mock validation (any non-empty credentials work for demo)
-    if (username.trim() && password.trim()) {
-      const mockUser: User = {
-        id: crypto.randomUUID(),
-        username: username,
-        email: `${username.toLowerCase()}@trading.io`,
+      const data = response.data;
+
+      // Create user object from response
+      const loggedInUser: User = {
+        id: data.userId.toString(),
+        username: data.username,
+        // Backend doesn't store email yet, so we generate a placeholder
+        email: `${data.username.toLowerCase()}@trading.io`,
       };
 
-      // Store in localStorage
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      localStorage.setItem('authToken', `mock-token-${Date.now()}`);
+      // Store session data
+      localStorage.setItem('user', JSON.stringify(loggedInUser));
+      localStorage.setItem('authToken', data.token);
       
-      setUser(mockUser);
+      setUser(loggedInUser);
       return true;
+    } catch (error) {
+      console.error("Login failed:", error);
+      return false;
     }
-
-    return false;
   };
 
   const logout = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('authToken');
     setUser(null);
+    // Optional: Redirect to login or refresh page
+    window.location.href = '/login';
   };
 
   return (

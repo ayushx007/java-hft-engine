@@ -42,18 +42,35 @@ public class OrderMatchingService {
 
     @Transactional
     public void processOrder(Order newOrder) {
-        // 1. Save the new order to DB
-        orderRepository.save(newOrder);
+        // 1. Save the new order to DB (only for LIMIT orders - MARKET orders are not persisted)
+        boolean isMarketOrder = newOrder.getOrderKind() == Order.OrderKind.MARKET;
+        if (!isMarketOrder) {
+            orderRepository.save(newOrder);
+        }
 
-        // 2. Find matching orders (Simple Price Priority)
-        // BUY looks for cheap SELLS. SELL looks for expensive BUYS.
+        // 2. Find matching orders
         List<Order> matchingOrders;
-        if (newOrder.getType() == Order.Type.BUY) {
-            matchingOrders = orderRepository.findByTickerAndTypeAndPriceLessThanEqualOrderByPriceAsc(
-                    newOrder.getTicker(), Order.Type.SELL, newOrder.getPrice());
+        
+        if (isMarketOrder) {
+            // MARKET ORDER: Match with any available orders (no price constraint)
+            if (newOrder.getType() == Order.Type.BUY) {
+                // Find all SELL orders, cheapest first
+                matchingOrders = orderRepository.findByTickerAndTypeAndQuantityGreaterThanOrderByPriceAsc(
+                        newOrder.getTicker(), Order.Type.SELL, 0);
+            } else {
+                // Find all BUY orders, highest first
+                matchingOrders = orderRepository.findByTickerAndTypeAndQuantityGreaterThanOrderByPriceDesc(
+                        newOrder.getTicker(), Order.Type.BUY, 0);
+            }
         } else {
-            matchingOrders = orderRepository.findByTickerAndTypeAndPriceGreaterThanEqualOrderByPriceDesc(
-                    newOrder.getTicker(), Order.Type.BUY, newOrder.getPrice());
+            // LIMIT ORDER: Match only within price constraints
+            if (newOrder.getType() == Order.Type.BUY) {
+                matchingOrders = orderRepository.findByTickerAndTypeAndPriceLessThanEqualOrderByPriceAsc(
+                        newOrder.getTicker(), Order.Type.SELL, newOrder.getPrice());
+            } else {
+                matchingOrders = orderRepository.findByTickerAndTypeAndPriceGreaterThanEqualOrderByPriceDesc(
+                        newOrder.getTicker(), Order.Type.BUY, newOrder.getPrice());
+            }
         }
 
         // 3. Match Logic

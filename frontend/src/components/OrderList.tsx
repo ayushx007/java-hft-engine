@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { tradeApi } from '@/api/axiosConfig';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, XCircle, History, ListFilter } from 'lucide-react';
 import { websocketService } from '@/api/websocketService';
+import { useAuth } from '@/context/AuthContext'; // <--- 1. Import AuthContext
 
 // Types
 interface Order {
@@ -31,27 +32,35 @@ interface Trade {
 
 const OrderList: React.FC = () => {
   const { toast } = useToast();
+  const { user } = useAuth(); // <--- 2. Get real user
+
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const [history, setHistory] = useState<Trade[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Function to fetch data
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    // 3. Safety check: Don't fetch if no user
+    if (!user?.id) return; 
+
     setIsLoading(true);
     try {
-      // 1. Get Pending
-      const pendingRes = await tradeApi.getPendingOrders(1); // User 1
-      setPendingOrders(pendingRes.data);
+      const userIdNum = Number(user.id);
 
-      // 2. Get History
-      const historyRes = await tradeApi.getHistory(1);
+      // 4. Use the real user ID
+      const [pendingRes, historyRes] = await Promise.all([
+         tradeApi.getPendingOrders(userIdNum),
+         tradeApi.getHistory(userIdNum)
+      ]);
+      
+      setPendingOrders(pendingRes.data);
       setHistory(historyRes.data);
     } catch (e) {
       console.error("Failed to fetch orders", e);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
   // Initial Load & WebSocket listener
   useEffect(() => {
@@ -63,7 +72,7 @@ const OrderList: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [fetchData]);
 
   const handleCancel = async (orderId: number) => {
     try {
@@ -139,7 +148,8 @@ const OrderList: React.FC = () => {
                    <p className="text-center text-muted-foreground py-8 text-sm">No trade history</p>
                 ) : (
                   history.slice().reverse().map((trade) => { // Reverse to show newest first
-                    const isBuyer = trade.buyerId === 1; // Assuming User 1
+                    // 5. Use real user ID to determine if they bought or sold
+                    const isBuyer = trade.buyerId === Number(user?.id); 
                     return (
                       <div key={trade.id} className="flex items-center justify-between p-3 border border-border rounded-lg bg-background/50 opacity-80">
                          <div className="flex flex-col gap-1">

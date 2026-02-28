@@ -21,8 +21,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         BigDecimal price
     );
 
+    // MARKET ORDER: Find all SELL orders for a ticker, sorted by price (cheapest first)
+    List<Order> findByTickerAndTypeAndQuantityGreaterThanOrderByPriceAsc(
+        String ticker, 
+        Order.Type type,
+        int minQuantity
+    );
 
-    // --- NEW METHOD: FILTER COMPLETED ORDERS ---
+    // MARKET ORDER: Find all BUY orders for a ticker, sorted by price (highest first)
+    List<Order> findByTickerAndTypeAndQuantityGreaterThanOrderByPriceDesc(
+        String ticker, 
+        Order.Type type,
+        int minQuantity
+    );
+
+    // --- FILTER COMPLETED ORDERS ---
     // Only return orders that still have stocks left to trade (Quantity > 0)
     List<Order> findByUserIdAndQuantityGreaterThan(Long userId, int quantity);
 }

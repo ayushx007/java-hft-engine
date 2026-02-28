@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -8,10 +8,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Wallet, RefreshCw } from 'lucide-react';
+import { Wallet, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import apiClient from '@/api/axiosConfig';
 import { websocketService } from '@/api/websocketService'; 
+import { useAuth } from '@/context/AuthContext'; // <--- Import Auth Context
 
 interface Holding {
   ticker: string;
@@ -28,19 +29,22 @@ interface PortfolioData {
 }
 
 const Portfolio: React.FC = () => {
+  const { user } = useAuth(); // <--- Get logged-in user
   const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Modified to support "Silent Refresh" (no spinner)
-  const loadPortfolio = async (silent = false) => {
+  // Memoized load function to use user ID from context
+  const loadPortfolio = useCallback(async (silent = false) => {
+    if (!user?.id) return;
+    
     if (!silent) setIsLoading(true);
     setError(null);
     
     try {
-      // Hardcoded to User 1 for MVP
-      const response = await apiClient.get<PortfolioData>('/api/portfolio/1');
-      console.log("✅ Portfolio Updated:", response.data);
+      // Use the dynamic ID from our Auth session
+      const response = await apiClient.get<PortfolioData>(`/api/portfolio/${user.id}`);
+      console.log("✅ Portfolio Updated for:", user.username);
       setPortfolio(response.data);
     } catch (err) {
       console.error('Portfolio fetch error:', err);
@@ -48,27 +52,25 @@ const Portfolio: React.FC = () => {
     } finally {
       if (!silent) setIsLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
-    // 1. Initial Load (Show Spinner)
+    if (!user) return;
+
+    // 1. Initial Load
     loadPortfolio(false);
 
-    // 2. Connect to WebSocket
+    // 2. Connect to WebSocket for real-time updates
     const setupWebSocket = async () => {
       try {
         await websocketService.connect();
         
-        // 3. Subscribe to Trade Updates
-        // The service returns a cleanup function (unsubscribe)
+        // Subscribe to Trade Updates to trigger refresh
         const unsubscribe = websocketService.subscribe('/topic/trades', (tradeEvent) => {
-          console.log("🔥 [Portfolio] WebSocket Event Received:", tradeEvent);
-          
-          // 4. Trigger Silent Refresh
-          loadPortfolio(true);
+          console.log("🔥 [Portfolio] Update triggered by trade event");
+          loadPortfolio(true); // Silent refresh on trade
         });
 
-        // Store cleanup for unmount
         return unsubscribe;
       } catch (e) {
         console.error("WebSocket connection failed in Portfolio:", e);
@@ -77,13 +79,13 @@ const Portfolio: React.FC = () => {
 
     const cleanupPromise = setupWebSocket();
 
-    // 5. Cleanup on Unmount
+    // 3. Cleanup on Unmount or User change
     return () => {
       cleanupPromise.then(unsubscribe => {
         if (unsubscribe) unsubscribe();
       });
     };
-  }, []);
+  }, [user, loadPortfolio]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -112,7 +114,8 @@ const Portfolio: React.FC = () => {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-mono text-foreground flex items-center gap-2">
             <Wallet className="h-5 w-5" />
-            Portfolio ({portfolio?.username || '---'})
+            {/* Now uses actual username from state/context */}
+            Portfolio ({user?.username || '---'})
           </CardTitle>
           <Button
             variant="ghost"
@@ -127,20 +130,52 @@ const Portfolio: React.FC = () => {
       </CardHeader>
 
       <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden">
-        {/* Balance Section */}
-        <div className="bg-background/50 rounded-lg p-4 border border-border">
-          <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-1">
-            Cash Balance
-          </p>
-          <p className="text-2xl font-bold font-mono text-success">
-            {portfolio ? formatCurrency(portfolio.balance) : '---'}
-          </p>
+        {/* Balance & Total P&L Section */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-background/50 rounded-lg p-3 border border-border">
+            <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-1">
+              Available Cash
+            </p>
+            <p className="text-xl font-bold font-mono text-success">
+              {portfolio ? formatCurrency(portfolio.balance) : '---'}
+            </p>
+          </div>
+          
+          {/* Total P&L */}
+          {portfolio?.holdings && portfolio.holdings.length > 0 && (() => {
+            const totalPnl = portfolio.holdings.reduce((sum, h) => {
+              return sum + (h.currentPrice - h.avgPrice) * h.quantity;
+            }, 0);
+            const totalValue = portfolio.holdings.reduce((sum, h) => {
+              return sum + h.currentPrice * h.quantity;
+            }, 0);
+            const totalCost = portfolio.holdings.reduce((sum, h) => {
+              return sum + h.avgPrice * h.quantity;
+            }, 0);
+            const pnlPercent = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+            const isPositive = totalPnl >= 0;
+            
+            return (
+              <div className="bg-background/50 rounded-lg p-3 border border-border">
+                <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-1">
+                  Total P&L
+                </p>
+                <p className={`text-xl font-bold font-mono flex items-center gap-1 ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                  {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                  {isPositive ? '+' : ''}{formatCurrency(totalPnl)}
+                </p>
+                <p className={`text-xs font-mono ${isPositive ? 'text-green-500/70' : 'text-red-500/70'}`}>
+                  ({isPositive ? '+' : ''}{pnlPercent.toFixed(2)}%) • Value: {formatCurrency(totalValue)}
+                </p>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Holdings Table */}
         <div className="flex-1 overflow-hidden">
           <p className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-2">
-            Holdings
+            Asset Holdings
           </p>
           <div className="overflow-auto h-[calc(100%-1.5rem)] rounded-lg border border-border">
             <Table>
@@ -148,22 +183,50 @@ const Portfolio: React.FC = () => {
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="font-mono text-xs text-muted-foreground">Ticker</TableHead>
                   <TableHead className="font-mono text-xs text-muted-foreground text-right">Qty</TableHead>
-                  <TableHead className="font-mono text-xs text-muted-foreground text-right">Avg Price</TableHead>
+                  <TableHead className="font-mono text-xs text-muted-foreground text-right">Avg</TableHead>
+                  <TableHead className="font-mono text-xs text-muted-foreground text-right">Current</TableHead>
+                  <TableHead className="font-mono text-xs text-muted-foreground text-right">P&L</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {portfolio?.holdings && portfolio.holdings.length > 0 ? (
-                  portfolio.holdings.map((h) => (
-                    <TableRow key={h.ticker} className="border-border hover:bg-muted/50">
-                      <TableCell className="font-mono font-medium">{h.ticker}</TableCell>
-                      <TableCell className="font-mono text-right">{h.quantity}</TableCell>
-                      <TableCell className="font-mono text-right">{formatCurrency(h.avgPrice)}</TableCell>
-                    </TableRow>
-                  ))
+                  portfolio.holdings.map((h) => {
+                    const pnl = (h.currentPrice - h.avgPrice) * h.quantity;
+                    const pnlPercent = h.avgPrice > 0 ? ((h.currentPrice - h.avgPrice) / h.avgPrice) * 100 : 0;
+                    const isPositive = pnl >= 0;
+                    
+                    return (
+                      <TableRow key={h.ticker} className="border-border hover:bg-muted/50">
+                        <TableCell className="font-mono font-medium">{h.ticker}</TableCell>
+                        <TableCell className="font-mono text-right">{h.quantity}</TableCell>
+                        <TableCell className="font-mono text-right text-muted-foreground text-sm">
+                          {formatCurrency(h.avgPrice)}
+                        </TableCell>
+                        <TableCell className="font-mono text-right text-sm">
+                          {formatCurrency(h.currentPrice)}
+                        </TableCell>
+                        <TableCell className={`font-mono text-right text-sm ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                          <div className="flex items-center justify-end gap-1">
+                            {isPositive ? (
+                              <TrendingUp className="w-3 h-3" />
+                            ) : (
+                              <TrendingDown className="w-3 h-3" />
+                            )}
+                            <span>
+                              {isPositive ? '+' : ''}{formatCurrency(pnl)}
+                            </span>
+                          </div>
+                          <div className="text-xs opacity-70">
+                            ({isPositive ? '+' : ''}{pnlPercent.toFixed(1)}%)
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground font-mono py-8">
-                      {isLoading ? "Loading..." : "No holdings"}
+                    <TableCell colSpan={5} className="text-center text-muted-foreground font-mono py-8">
+                      {isLoading ? "Fetching assets..." : "No holdings found"}
                     </TableCell>
                   </TableRow>
                 )}

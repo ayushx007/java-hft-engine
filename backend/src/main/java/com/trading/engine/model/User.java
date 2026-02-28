@@ -4,9 +4,9 @@ import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
 
-@Data // Lombok automatically generates Getters, Setters, and toString
-@Entity // Tells Spring "This class maps to a Database Table"
-@Table(name = "users") // Renames the table to 'users' (Postgres reserved word avoidance)
+@Data
+@Entity
+@Table(name = "users")
 public class User {
 
     @Id
@@ -17,5 +17,7 @@ public class User {
     private String username;
 
     @Column(nullable = false)
-    private BigDecimal balance; // Use BigDecimal for money!
+    private String password; // <--- NEW FIELD
+
+    private BigDecimal balance;
 }

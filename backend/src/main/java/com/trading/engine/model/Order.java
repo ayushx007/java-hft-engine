@@ -18,7 +18,10 @@ public class Order {
     private String ticker;
 
     @Enumerated(EnumType.STRING)
-    private Type type; // Changed to use the inner enum
+    private Type type; // BUY or SELL
+
+    @Enumerated(EnumType.STRING)
+    private OrderKind orderKind = OrderKind.LIMIT; // LIMIT or MARKET
 
     private BigDecimal price;
     private Integer quantity;
@@ -28,9 +31,13 @@ public class Order {
 
     private LocalDateTime timestamp = LocalDateTime.now();
 
-    // Inner Enum Definition (Required by OrderMatchingService)
+    // Inner Enum Definitions
     public enum Type {
         BUY, SELL
+    }
+
+    public enum OrderKind {
+        LIMIT, MARKET
     }
 
     public enum OrderStatus {

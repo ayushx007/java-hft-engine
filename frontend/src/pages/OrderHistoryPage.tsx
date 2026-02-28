@@ -26,6 +26,7 @@ import { ArrowLeft, Filter, X, TrendingUp, TrendingDown, Loader2, Trash2 } from 
 import { tradeApi } from '@/api/axiosConfig';
 import { websocketService } from '@/api/websocketService';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext'; // <--- IMPORT AUTH CONTEXT
 
 interface TradeRecord {
   id: string;
@@ -41,6 +42,8 @@ interface TradeRecord {
 const OrderHistoryPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth(); // <--- GET CURRENT USER
+  
   const [history, setHistory] = useState<TradeRecord[]>([]);
   const [pending, setPending] = useState<TradeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,35 +55,41 @@ const OrderHistoryPage: React.FC = () => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // --- 1. FETCH REAL DATA (Both Lists) ---
   const fetchData = async () => {
+    // Safety check: Don't fetch if no user is logged in
+    if (!user?.id) return;
+
     setIsLoading(true);
     try {
+      // Use the REAL User ID from Auth Context
+      const userId = Number(user.id); 
+
       const [historyRes, pendingRes] = await Promise.all([
-        tradeApi.getHistory(1),
-        tradeApi.getPendingOrders(1)
+        tradeApi.getHistory(userId), 
+        tradeApi.getPendingOrders(userId)
       ]);
       
-      // Transform History
+      // Transform History Data
       const formattedHistory: TradeRecord[] = historyRes.data.map((t: any) => ({
         id: t.id.toString(),
         ticker: t.ticker,
         price: t.price,
         quantity: t.quantity,
-        type: t.buyerId === 1 ? 'BUY' : 'SELL',
+        // Compare against the REAL User ID
+        type: t.buyerId === userId ? 'BUY' : 'SELL', 
         timestamp: t.timestamp,
         status: 'EXECUTED',
         total: t.price * t.quantity
       })).reverse();
 
-      // Transform Pending
+      // Transform Pending Data
       const formattedPending: TradeRecord[] = pendingRes.data.map((o: any) => ({
         id: o.id.toString(),
         ticker: o.ticker,
         price: o.price,
         quantity: o.quantity,
         type: o.type,
-        timestamp: new Date().toISOString(), 
+        timestamp: new Date().toISOString(),
         status: 'PENDING',
         total: o.price * o.quantity
       })).reverse();
@@ -88,30 +97,64 @@ const OrderHistoryPage: React.FC = () => {
       setHistory(formattedHistory);
       setPending(formattedPending);
     } catch (error) {
-      console.error("Failed to load data", error);
+      console.error("Failed to load history", error);
+      toast({ title: "Connection Error", description: "Failed to load order data.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    const unsubscribe = websocketService.onConnectionChange(setIsConnected);
-    return () => unsubscribe();
-  }, []);
+    if (!user?.id) return;
 
-  // --- 2. CANCEL LOGIC ---
+    // 1. Initial Data Load
+    fetchData();
+
+    // 2. Connect to WebSocket and subscribe to trades
+    const setupWebSocket = async () => {
+      try {
+        websocketService.connect();
+        
+        // Subscribe to trade updates to refresh data in real-time
+        const unsubscribeTrades = websocketService.onTrade(() => {
+          console.log("🔥 [OrderHistory] Update triggered by trade event");
+          fetchData(); // Refresh orders when a trade happens
+        });
+
+        // Subscribe to connection status changes
+        const unsubscribeConnection = websocketService.onConnectionChange(setIsConnected);
+
+        return () => {
+          unsubscribeTrades();
+          unsubscribeConnection();
+        };
+      } catch (e) {
+        console.error("WebSocket connection failed in OrderHistory:", e);
+      }
+    };
+
+    const cleanupPromise = setupWebSocket();
+
+    // 3. Cleanup on Unmount
+    return () => {
+      cleanupPromise?.then(cleanup => {
+        if (cleanup) cleanup();
+      });
+    };
+  }, [user?.id]); // Re-fetch if user changes
+
+  // --- 2. CANCEL ACTION ---
   const handleCancel = async (orderId: string) => {
     try {
       await tradeApi.cancelOrder(parseInt(orderId));
       toast({ title: "Order Cancelled", className: "text-destructive border-destructive" });
-      fetchData(); 
+      fetchData();
     } catch (e) {
       toast({ title: "Failed to cancel", variant: "destructive" });
     }
   };
 
-  // --- 3. FILTER LOGIC (Reused for both lists) ---
+  // --- 3. FILTER LOGIC ---
   const applyFilters = (list: TradeRecord[]) => {
     return list.filter((trade) => {
       if (tickerFilter !== 'ALL' && trade.ticker !== tickerFilter) return false;
@@ -135,13 +178,13 @@ const OrderHistoryPage: React.FC = () => {
   const filteredHistory = useMemo(() => applyFilters(history), [history, tickerFilter, typeFilter, startDate, endDate]);
   const filteredPending = useMemo(() => applyFilters(pending), [pending, tickerFilter, typeFilter, startDate, endDate]);
 
-  // Unique Tickers for Dropdown (from both lists)
   const uniqueTickers = useMemo(() => {
-    const allTickers = [...history, ...pending].map(t => t.ticker);
-    return [...new Set(allTickers)].sort();
+    const all = [...history, ...pending];
+    const tickers = [...new Set(all.map((t) => t.ticker))];
+    return tickers.sort();
   }, [history, pending]);
 
-  // --- 4. SUMMARY STATS (Based on Executed History Only) ---
+  // --- 4. SUMMARY STATS ---
   const summary = useMemo(() => {
     const buys = filteredHistory.filter((t) => t.type === 'BUY');
     const sells = filteredHistory.filter((t) => t.type === 'SELL');
@@ -164,12 +207,12 @@ const OrderHistoryPage: React.FC = () => {
   const hasActiveFilters = tickerFilter !== 'ALL' || typeFilter !== 'ALL' || startDate || endDate;
 
   const formatDate = (dateString: string) => {
-    if(!dateString) return '--';
+    if (!dateString) return '--';
     return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const formatTime = (dateString: string) => {
-    if(!dateString) return '--';
+    if (!dateString) return '--';
     return new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
@@ -181,19 +224,25 @@ const OrderHistoryPage: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')} className="text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="w-4 h-4 mr-2" /> Back to Dashboard
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/dashboard')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Dashboard
             </Button>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Order Management</h1>
               <p className="text-sm text-muted-foreground font-mono">
-                {isLoading ? "Loading..." : `${filteredHistory.length} executed, ${filteredPending.length} pending`}
+                {isLoading ? "Loading records..." : `${filteredHistory.length} executed, ${filteredPending.length} pending`}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Summary Cards (Your Original UI) */}
+        {/* --- SUMMARY CARDS --- */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="bg-card border-border">
             <CardContent className="pt-6">
@@ -207,7 +256,9 @@ const OrderHistoryPage: React.FC = () => {
                 <TrendingUp className="w-3 h-3 text-primary" /> Buy Orders
               </div>
               <div className="text-2xl font-bold font-mono text-primary">{summary.buyCount}</div>
-              <div className="text-xs text-muted-foreground font-mono">${summary.buyVolume.toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground font-mono">
+                ${summary.buyVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
             </CardContent>
           </Card>
           <Card className="bg-card border-border">
@@ -216,28 +267,36 @@ const OrderHistoryPage: React.FC = () => {
                 <TrendingDown className="w-3 h-3 text-destructive" /> Sell Orders
               </div>
               <div className="text-2xl font-bold font-mono text-destructive">{summary.sellCount}</div>
-              <div className="text-xs text-muted-foreground font-mono">${summary.sellVolume.toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground font-mono">
+                ${summary.sellVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
             </CardContent>
           </Card>
           <Card className="bg-card border-border">
             <CardContent className="pt-6">
               <div className="text-sm text-muted-foreground">Net Volume</div>
               <div className={`text-2xl font-bold font-mono ${summary.buyVolume > summary.sellVolume ? 'text-primary' : 'text-destructive'}`}>
-                ${Math.abs(summary.buyVolume - summary.sellVolume).toLocaleString()}
+                ${Math.abs(summary.buyVolume - summary.sellVolume).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-xs text-muted-foreground font-mono">{summary.buyVolume > summary.sellVolume ? 'Net Buying' : 'Net Selling'}</div>
+              <div className="text-xs text-muted-foreground font-mono">
+                {summary.buyVolume > summary.sellVolume ? 'Net Buying' : 'Net Selling'}
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Filters (Your Original UI) */}
+        {/* --- FILTERS --- */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2"><Filter className="w-4 h-4" /> Filters</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                Filters
+              </CardTitle>
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-                  <X className="w-4 h-4 mr-1" /> Clear All
+                  <X className="w-4 h-4 mr-1" />
+                  Clear All
                 </Button>
               )}
             </div>
@@ -247,17 +306,26 @@ const OrderHistoryPage: React.FC = () => {
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Ticker</Label>
                 <Select value={tickerFilter} onValueChange={setTickerFilter}>
-                  <SelectTrigger className="bg-background border-border"><SelectValue placeholder="All Tickers" /></SelectTrigger>
+                  <SelectTrigger className="bg-background border-border">
+                    <SelectValue placeholder="All Tickers" />
+                  </SelectTrigger>
                   <SelectContent className="bg-popover border-border">
                     <SelectItem value="ALL">All Tickers</SelectItem>
-                    {uniqueTickers.map((ticker) => <SelectItem key={ticker} value={ticker}>{ticker}</SelectItem>)}
+                    {uniqueTickers.map((ticker) => (
+                      <SelectItem key={ticker} value={ticker}>
+                        {ticker}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Trade Type</Label>
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="bg-background border-border"><SelectValue placeholder="All Types" /></SelectTrigger>
+                  <SelectTrigger className="bg-background border-border">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
                   <SelectContent className="bg-popover border-border">
                     <SelectItem value="ALL">All Types</SelectItem>
                     <SelectItem value="BUY">Buy Only</SelectItem>
@@ -265,19 +333,31 @@ const OrderHistoryPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Start Date</Label>
-                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-background border-border font-mono" />
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="bg-background border-border font-mono"
+                />
               </div>
+
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">End Date</Label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-background border-border font-mono" />
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="bg-background border-border font-mono"
+                />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* --- TABS SECTION (New Wrapper) --- */}
+        {/* --- TABS --- */}
         <Tabs defaultValue="pending" className="w-full">
           <TabsList className="bg-card border border-border">
             <TabsTrigger value="pending" className="px-8">
@@ -287,7 +367,7 @@ const OrderHistoryPage: React.FC = () => {
             <TabsTrigger value="history" className="px-8">Trade History</TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: OPEN ORDERS (With Cancel) */}
+          {/* TAB 1: PENDING */}
           <TabsContent value="pending" className="mt-4">
             <Card className="bg-card border-border">
               <CardContent className="p-0">
@@ -314,9 +394,9 @@ const OrderHistoryPage: React.FC = () => {
                           <TableCell className="font-mono text-sm text-right">{o.quantity}</TableCell>
                           <TableCell className="font-mono text-sm text-right">${o.total.toLocaleString()}</TableCell>
                           <TableCell className="text-right">
-                            <Button size="sm" variant="destructive" onClick={() => handleCancel(o.id)}>
-                              <Trash2 className="w-4 h-4 mr-2" /> Cancel
-                            </Button>
+                             <Button size="sm" variant="destructive" onClick={() => handleCancel(o.id)}>
+                               <Trash2 className="w-4 h-4 mr-2" /> Cancel
+                             </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -327,7 +407,7 @@ const OrderHistoryPage: React.FC = () => {
             </Card>
           </TabsContent>
 
-          {/* TAB 2: TRADE HISTORY (Your Original Table) */}
+          {/* TAB 2: HISTORY */}
           <TabsContent value="history" className="mt-4">
             <Card className="bg-card border-border">
               <CardContent className="p-0">
@@ -355,13 +435,22 @@ const OrderHistoryPage: React.FC = () => {
                           <TableCell className="font-mono text-sm font-semibold">{trade.ticker}</TableCell>
                           <TableCell>
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-semibold ${trade.type === 'BUY' ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
-                              {trade.type === 'BUY' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />} {trade.type}
+                              {trade.type === 'BUY' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {trade.type}
                             </span>
                           </TableCell>
-                          <TableCell className={`font-mono text-sm text-right ${trade.type === 'BUY' ? 'text-primary' : 'text-destructive'}`}>${trade.price.toFixed(2)}</TableCell>
+                          <TableCell className={`font-mono text-sm text-right ${trade.type === 'BUY' ? 'text-primary' : 'text-destructive'}`}>
+                            ${trade.price.toFixed(2)}
+                          </TableCell>
                           <TableCell className="font-mono text-sm text-right">{trade.quantity}</TableCell>
-                          <TableCell className="font-mono text-sm text-right font-semibold">${trade.total.toLocaleString()}</TableCell>
-                          <TableCell className="text-center"><span className="px-2 py-0.5 rounded text-xs font-mono bg-primary/10 text-primary">EXECUTED</span></TableCell>
+                          <TableCell className="font-mono text-sm text-right font-semibold">
+                            ${trade.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="px-2 py-0.5 rounded text-xs font-mono bg-primary/10 text-primary">
+                              {trade.status}
+                            </span>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -371,7 +460,6 @@ const OrderHistoryPage: React.FC = () => {
             </Card>
           </TabsContent>
         </Tabs>
-
       </main>
     </div>
   );
