@@ -23,6 +23,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable()) // Disable CSRF for APIs
             .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Enable CORS
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll() // Allow CORS preflight
                 .requestMatchers("/api/auth/**").permitAll() // Allow Login/Register
                 .requestMatchers("/ws-message/**").permitAll() // Allow WebSocket Handshake
                 .requestMatchers("/api/portfolio/**", "/api/trade/**", "/api/orders/**", "/api/trades/**", "/api/orderbook/**", "/api/watchlist/**").permitAll() // Temporarily permit all API for testing (Phase 1)
@@ -54,9 +55,16 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
-        config.addAllowedOriginPattern("*"); 
+        config.addAllowedOriginPattern("*");
         config.addAllowedHeader("*");
-        config.addAllowedMethod("*");
+        config.addAllowedMethod("GET");
+        config.addAllowedMethod("POST");
+        config.addAllowedMethod("PUT");
+        config.addAllowedMethod("DELETE");
+        config.addAllowedMethod("OPTIONS");
+        config.addAllowedMethod("PATCH");
+        config.addExposedHeader("Authorization");
+        config.setMaxAge(3600L); // Cache preflight response for 1 hour
         source.registerCorsConfiguration("/**", config);
         return source;
     }
